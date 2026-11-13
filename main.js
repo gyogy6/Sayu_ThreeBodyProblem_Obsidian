@@ -1,13 +1,13 @@
 'use strict';
 /*
- * gyogy6 Three-Body Problem
+ * Sayu Three-Body Problem
  * A graph view driven by a three-body gravity simulation.
  * The three most linked notes are suns; every other note is a planet.
  */
 const obsidian = require('obsidian');
 
-const VIEW_TYPE = 'gyogy6-three-body-problem';
-const ICON_ID = 'gyogy6-3body';
+const VIEW_TYPE = 'sayu-three-body-problem';
+const ICON_ID = 'sayu-3body';
 const ICON_SVG =
   '<ellipse cx="50" cy="50" rx="43" ry="17" fill="none" stroke="currentColor" stroke-width="6" transform="rotate(-28 50 50)"/>' +
   '<circle cx="50" cy="50" r="10" fill="currentColor"/>' +
@@ -424,14 +424,14 @@ class ThreeBodyScene {
     this.fadeAcc = 0;
     this.drag = null;
 
-    this.root = el(this.doc, 'div', 'gyogy6-3body-root', host);
-    this.bg = el(this.doc, 'canvas', 'gyogy6-3body-layer', this.root);
-    this.trail = el(this.doc, 'canvas', 'gyogy6-3body-layer', this.root);
-    this.top = el(this.doc, 'canvas', 'gyogy6-3body-layer', this.root);
+    this.root = el(this.doc, 'div', 'sayu-3body-root', host);
+    this.bg = el(this.doc, 'canvas', 'sayu-3body-layer', this.root);
+    this.trail = el(this.doc, 'canvas', 'sayu-3body-layer', this.root);
+    this.top = el(this.doc, 'canvas', 'sayu-3body-layer', this.root);
     this.bctx = this.bg.getContext('2d');
     this.tctx = this.trail.getContext('2d');
     this.ctx = this.top.getContext('2d');
-    this.status = el(this.doc, 'div', 'gyogy6-3body-status', this.root);
+    this.status = el(this.doc, 'div', 'sayu-3body-status', this.root);
     this.glow = SUN_COLORS.map((c) => this.makeGlow(c));
     this.font = this.win.getComputedStyle(host).fontFamily || 'sans-serif';
 
@@ -584,20 +584,20 @@ class ThreeBodyScene {
     const d = this.doc;
     const s = this.s;
     const changed = () => this.o.onChange && this.o.onChange();
-    const panel = el(d, 'div', 'gyogy6-3body-panel', this.root);
+    const panel = el(d, 'div', 'sayu-3body-panel', this.root);
     panel.classList.toggle('is-collapsed', !s.panelOpen);
-    const head = el(d, 'div', 'gyogy6-3body-head', panel);
-    el(d, 'span', 'gyogy6-3body-title', head, t('title'));
-    const chev = el(d, 'span', 'gyogy6-3body-chevron', head, s.panelOpen ? '▾' : '☰');
+    const head = el(d, 'div', 'sayu-3body-head', panel);
+    el(d, 'span', 'sayu-3body-title', head, t('title'));
+    const chev = el(d, 'span', 'sayu-3body-chevron', head, s.panelOpen ? '▾' : '☰');
     head.addEventListener('click', () => {
       s.panelOpen = !s.panelOpen;
       panel.classList.toggle('is-collapsed', !s.panelOpen);
       chev.textContent = s.panelOpen ? '▾' : '☰';
       changed();
     });
-    const body = el(d, 'div', 'gyogy6-3body-body', panel);
+    const body = el(d, 'div', 'sayu-3body-body', panel);
 
-    let row = el(d, 'div', 'gyogy6-3body-row', body);
+    let row = el(d, 'div', 'sayu-3body-row', body);
     el(d, 'label', '', row, t('mode'));
     const mode = el(d, 'select', 'dropdown', row);
     for (const m of ['figure8', 'triangle', 'chaos']) {
@@ -612,7 +612,7 @@ class ThreeBodyScene {
     });
 
     const slider = (label, key, min, max, step) => {
-      const r = el(d, 'div', 'gyogy6-3body-row', body);
+      const r = el(d, 'div', 'sayu-3body-row', body);
       el(d, 'label', '', r, label);
       const inp = el(d, 'input', '', r);
       inp.type = 'range';
@@ -629,7 +629,7 @@ class ThreeBodyScene {
     slider(t('trail'), 'trail', 0, 1, 0.02);
 
     const check = (label, key) => {
-      const l = el(d, 'label', 'gyogy6-3body-check', body);
+      const l = el(d, 'label', 'sayu-3body-check', body);
       const inp = el(d, 'input', '', l);
       inp.type = 'checkbox';
       inp.checked = !!s[key];
@@ -642,7 +642,7 @@ class ThreeBodyScene {
     check(t('links'), 'showLinks');
     check(t('labels'), 'showLabels');
 
-    row = el(d, 'div', 'gyogy6-3body-buttons', body);
+    row = el(d, 'div', 'sayu-3body-buttons', body);
     const pause = el(d, 'button', '', row, t('pause'));
     pause.addEventListener('click', () => {
       this.paused = !this.paused;
@@ -654,7 +654,7 @@ class ThreeBodyScene {
       else this.restart();
       this.resetView();
     });
-    el(d, 'div', 'gyogy6-3body-hint', body, t('hint'));
+    el(d, 'div', 'sayu-3body-hint', body, t('hint'));
     // Keep canvas gestures from firing through the panel.
     for (const type of ['pointerdown', 'wheel', 'dblclick']) {
       panel.addEventListener(type, (ev) => ev.stopPropagation());
@@ -1052,7 +1052,7 @@ class ThreeBodyView extends obsidian.ItemView {
   async onOpen() {
     const plugin = this.plugin;
     this.contentEl.empty();
-    this.contentEl.addClass('gyogy6-3body-view');
+    this.contentEl.addClass('sayu-3body-view');
     this.scene = new ThreeBodyScene(this.contentEl, {
       settings: plugin.settings,
       onChange: () => plugin.saveSoon(),
