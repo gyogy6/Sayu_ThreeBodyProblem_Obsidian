@@ -16,6 +16,7 @@ const ICON_SVG =
 
 const DEFAULTS = {
   mode: 'figure8',
+  source: 'links',
   speed: 1,
   trail: 0.6,
   showLinks: false,
@@ -32,6 +33,10 @@ const I18N = {
     title: 'Three-Body Problem',
     open: 'Open Three-Body Problem graph',
     mode: 'Mode',
+    source: 'Structure',
+    srcLinks: 'Links',
+    srcFolders: 'Folders',
+    srcBoth: 'Links + folders',
     figure8: 'Figure-8 (periodic)',
     triangle: 'Triangle (order → collapse)',
     chaos: 'Chaos',
@@ -54,6 +59,10 @@ const I18N = {
     title: '三体問題',
     open: '三体問題グラフを開く',
     mode: 'モード',
+    source: '構造',
+    srcLinks: 'リンク',
+    srcFolders: 'フォルダ',
+    srcBoth: 'リンク＋フォルダ',
     figure8: '8の字（周期解）',
     triangle: '三角形（秩序→崩壊）',
     chaos: 'カオス',
@@ -76,6 +85,10 @@ const I18N = {
     title: '삼체 문제',
     open: '삼체 문제 그래프 열기',
     mode: '모드',
+    source: '구조',
+    srcLinks: '링크',
+    srcFolders: '폴더',
+    srcBoth: '링크 + 폴더',
     figure8: '8자 궤도 (주기해)',
     triangle: '삼각형 (질서 → 붕괴)',
     chaos: '카오스',
@@ -399,6 +412,7 @@ class ThreeBodyScene {
     this.adj = [];
     this.deg = new Uint32Array(0);
     this.groups = [[], [], [], []];
+    this.folderIdx = [];
     this.RAD = new Float32Array(0);
     this.SX = new Float32Array(0);
     this.SY = new Float32Array(0);
@@ -493,7 +507,7 @@ class ThreeBodyScene {
     }
     const remap = new Int32Array(n0).fill(-1);
     keep.forEach((o, i) => { remap[o] = i; });
-    const nodes = keep.map((o) => ({ path: src[o].path, name: src[o].name }));
+    const nodes = keep.map((o) => ({ path: src[o].path, name: src[o].name, folder: !!src[o].folder }));
     while (nodes.length < 3) nodes.push({ path: null, name: '' });
     const n = nodes.length;
 
@@ -554,6 +568,8 @@ class ThreeBodyScene {
     this.pathIndex = new Map();
     nodes.forEach((nd, i) => { if (nd.path != null) this.pathIndex.set(nd.path, i); });
     this.groups = [[], [], [], []];
+    this.folderIdx = [];
+    nodes.forEach((nd, i) => { if (nd.folder) this.folderIdx.push(i); });
     this.RAD = new Float32Array(n);
     for (let i = 3; i < n; i++) {
       this.groups[kind[i] === 1 ? home[i] : 3].push(i);
@@ -566,7 +582,7 @@ class ThreeBodyScene {
     if (this.follow >= 3 || this.follow >= n) this.follow = -1;
     this.hover = -1;
     this.trailReset = true;
-    const real = nodes.filter((nd) => nd.path != null).length;
+    const real = nodes.filter((nd) => nd.path != null && !nd.folder).length;
     this.status.textContent = `${real} ${t('notes')} · ${ed.length / 2} ${t('linksCount')}`;
   }
 
@@ -608,6 +624,20 @@ class ThreeBodyScene {
     mode.addEventListener('change', () => {
       s.mode = mode.value;
       this.restart();
+      changed();
+    });
+
+    row = el(d, 'div', 'sayu-3body-row', body);
+    el(d, 'label', '', row, t('source'));
+    const source = el(d, 'select', 'dropdown', row);
+    for (const [v, k] of [['links', 'srcLinks'], ['folders', 'srcFolders'], ['both', 'srcBoth']]) {
+      const o = el(d, 'option', '', source, t(k));
+      o.value = v;
+    }
+    source.value = s.source;
+    source.addEventListener('change', () => {
+      s.source = source.value;
+      if (this.o.requestGraph) this.setGraph(this.o.requestGraph(), true);
       changed();
     });
 
@@ -699,7 +729,7 @@ class ThreeBodyScene {
         this.panX = 0;
         this.panY = 0;
         this.trailReset = true;
-      } else if (this.nodes[i].path != null && this.o.onOpen) {
+      } else if (this.nodes[i].path != null && !this.nodes[i].folder && this.o.onOpen) {
         this.o.onOpen(this.nodes[i].path, ev);
       }
     };
@@ -927,6 +957,24 @@ class ThreeBodyScene {
       c.fill();
     }
 
+    // Folders are drawn with a ring so they read differently from notes.
+    const fl = this.folderIdx;
+    if (fl.length) {
+      c.strokeStyle = 'rgba(232,238,255,0.6)';
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let k = 0; k < fl.length; k++) {
+        const i = fl[k];
+        const x = SX[i];
+        const y = SY[i];
+        if (x < -12 || y < -12 || x > w + 12 || y > h + 12) continue;
+        const r = i < 3 ? 9 * rs : RAD[i] * rs + 2.5;
+        c.moveTo(x + r, y);
+        c.arc(x, y, r, 0, TAU);
+      }
+      c.stroke();
+    }
+
     c.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 3; i++) {
       const R = (22 + 10 * sim.M[i]) * rs;
@@ -1013,7 +1061,29 @@ function buildGraphData(app, settings) {
   const count = files.length;
   const seen = new Set();
   const edges = [];
-  const resolved = app.metadataCache.resolvedLinks || {};
+  const nodes = files.map((f) => ({ path: f.path, name: f.basename }));
+  const source = settings.source || 'links';
+  if (source !== 'links') {
+    // Each folder becomes a body of its own, tied to its notes and subfolders.
+    const fidx = new Map();
+    const folderNode = (folder) => {
+      if (!folder || !folder.parent) return -1; // vault root: would tie everything together
+      let i = fidx.get(folder.path);
+      if (i === undefined) {
+        i = nodes.length;
+        nodes.push({ path: folder.path + '/', name: folder.name + '/', folder: true });
+        fidx.set(folder.path, i);
+        const p = folderNode(folder.parent);
+        if (p >= 0) edges.push(i, p);
+      }
+      return i;
+    };
+    files.forEach((f, i) => {
+      const p = folderNode(f.parent);
+      if (p >= 0) edges.push(i, p);
+    });
+  }
+  const resolved = source === 'folders' ? {} : app.metadataCache.resolvedLinks || {};
   for (const src in resolved) {
     const a = index.get(src);
     if (a === undefined) continue;
@@ -1026,7 +1096,7 @@ function buildGraphData(app, settings) {
       edges.push(a, b);
     }
   }
-  return { nodes: files.map((f) => ({ path: f.path, name: f.basename })), edges };
+  return { nodes, edges };
 }
 
 class ThreeBodyView extends obsidian.ItemView {
@@ -1073,7 +1143,7 @@ class ThreeBodyView extends obsidian.ItemView {
   reload(fresh) {
     if (!this.scene) return;
     const g = buildGraphData(this.app, this.plugin.settings);
-    const sig = g.nodes.length + ':' + g.edges.length;
+    const sig = g.nodes.length + ':' + g.edges.length + ':' + this.plugin.settings.source;
     if (!fresh && sig === this.sig) return;
     this.sig = sig;
     this.scene.setGraph(g, fresh);

@@ -30,10 +30,31 @@
         if (b !== i) { edges.push(i, b); ends.push(i, b); }
       }
     }
+    if (settings.source !== 'links') {
+      // Fake folder tree: 6 top-level folders, some with subfolders.
+      if (settings.source === 'folders') edges.length = 0;
+      const base = nodes.length, tops = [40, 25, 15, 10, 6, 4], made = {};
+      const folder = (name, parent) => {
+        if (made[name] === undefined) {
+          made[name] = nodes.length;
+          nodes.push({ path: name + '/', name: name.split('/').pop() + '/', folder: true });
+          if (parent != null) edges.push(made[name], made[parent]);
+        }
+        return made[name];
+      };
+      for (let i = 0; i < base; i++) {
+        let r = Math.random() * 100, t = 0;
+        while (t < tops.length - 1 && r > tops[t]) { r -= tops[t]; t++; }
+        const top = 'Folder' + (t + 1);
+        folder(top, null);
+        const sub = Math.random() < 0.5 ? top + '/Sub' + ((Math.random() * 3) | 0) : null;
+        edges.push(i, sub ? folder(sub, top) : made[top]);
+      }
+    }
     return { nodes, edges };
   }
   const q = new URLSearchParams(location.search);
-  const settings = { mode: q.get('mode') || 'figure8', speed: 1, trail: 0.6, showLinks: false, showLabels: true, panelOpen: true, maxNodes: 3000 };
+  const settings = { source: q.get('source') || 'links', mode: q.get('mode') || 'figure8', speed: 1, trail: 0.6, showLinks: false, showLabels: true, panelOpen: true, maxNodes: 3000 };
   const graph = () => fakeGraph(+(q.get('n') || 700), +(q.get('o') || 200));
   window.opened = [];
   window.scene = new module.exports.internals.ThreeBodyScene(document.getElementById('host'), {
