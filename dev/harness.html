@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Orbit Graph preview</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; font-family: system-ui, sans-serif; }
+  #host { position: absolute; inset: 0; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script>
+  // Minimal stand-ins so main.js loads outside Obsidian.
+  const stub = { Plugin: class {}, ItemView: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {} };
+  window.require = () => stub;
+  window.module = { exports: {} };
+</script>
+<script src="/main.js"></script>
+<script>
+  // Fake vault: preferential attachment plus some unlinked notes.
+  function fakeGraph(linked, orphans) {
+    const nodes = [], edges = [], ends = [0, 1, 2];
+    for (let i = 0; i < linked + orphans; i++) nodes.push({ path: 'n' + i + '.md', name: 'Note ' + i });
+    for (let i = 3; i < linked; i++) {
+      const k = Math.random() < 0.3 ? 2 : 1;
+      for (let j = 0; j < k; j++) {
+        const b = ends[(Math.random() * ends.length) | 0];
+        if (b !== i) { edges.push(i, b); ends.push(i, b); }
+      }
+    }
+    return { nodes, edges };
+  }
+  const q = new URLSearchParams(location.search);
+  const settings = { mode: q.get('mode') || 'figure8', speed: 1, trail: 0.6, showLinks: false, showLabels: true, panelOpen: true, maxNodes: 3000 };
+  const graph = () => fakeGraph(+(q.get('n') || 700), +(q.get('o') || 200));
+  window.opened = [];
+  window.scene = new module.exports.internals.OrbitScene(document.getElementById('host'), {
+    settings,
+    onChange() {},
+    requestGraph: graph,
+    onOpen: (p) => window.opened.push(p),
+  });
+  scene.setGraph(graph(), true);
+</script>
+</body>
+</html>
