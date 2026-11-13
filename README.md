@@ -1,4 +1,4 @@
-# gyogy6 Orbit Graph
+# gyogy6 Three-Body Problem
 
 Obsidian のノートを、三体問題の重力シミュレーションで動く星系として表示するグラフビュー。
 
@@ -52,7 +52,7 @@ Obsidian のノートを、三体問題の重力シミュレーションで動�
 
 ## インストール
 
-`manifest.json` `main.js` `styles.css` を Vault の `.obsidian/plugins/gyogy6-orbit-graph/` に置き、設定 → コミュニティプラグインで有効にする。リボンのアイコン、またはコマンド「軌道グラフを開く」で表示。
+`manifest.json` `main.js` `styles.css` を Vault の `.obsidian/plugins/gyogy6-three-body-problem/` に置き、設定 → コミュニティプラグインで有効にする。リボンのアイコン、またはコマンド「三体問題グラフを開く」で表示。
 
 ## シミュレーションについて
 

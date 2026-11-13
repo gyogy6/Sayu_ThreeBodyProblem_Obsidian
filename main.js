@@ -1,13 +1,13 @@
 'use strict';
 /*
- * gyogy6 Orbit Graph
+ * gyogy6 Three-Body Problem
  * A graph view driven by a three-body gravity simulation.
  * The three most linked notes are suns; every other note is a planet.
  */
 const obsidian = require('obsidian');
 
-const VIEW_TYPE = 'gyogy6-orbit-graph';
-const ICON_ID = 'gyogy6-orbit';
+const VIEW_TYPE = 'gyogy6-three-body-problem';
+const ICON_ID = 'gyogy6-3body';
 const ICON_SVG =
   '<ellipse cx="50" cy="50" rx="43" ry="17" fill="none" stroke="currentColor" stroke-width="6" transform="rotate(-28 50 50)"/>' +
   '<circle cx="50" cy="50" r="10" fill="currentColor"/>' +
@@ -29,8 +29,8 @@ const DEFAULTS = {
 
 const I18N = {
   en: {
-    title: 'Orbit Graph',
-    open: 'Open Orbit Graph',
+    title: 'Three-Body Problem',
+    open: 'Open Three-Body Problem graph',
     mode: 'Mode',
     figure8: 'Figure-8 (periodic)',
     triangle: 'Triangle (order → collapse)',
@@ -51,8 +51,8 @@ const I18N = {
     excludeDesc: 'One path prefix per line.',
   },
   ja: {
-    title: '軌道グラフ',
-    open: '軌道グラフを開く',
+    title: '三体問題',
+    open: '三体問題グラフを開く',
     mode: 'モード',
     figure8: '8の字（周期解）',
     triangle: '三角形（秩序→崩壊）',
@@ -73,8 +73,8 @@ const I18N = {
     excludeDesc: '1行に1つ、パスの先頭一致で指定します。',
   },
   ko: {
-    title: '궤도 그래프',
-    open: '궤도 그래프 열기',
+    title: '삼체 문제',
+    open: '삼체 문제 그래프 열기',
     mode: '모드',
     figure8: '8자 궤도 (주기해)',
     triangle: '삼각형 (질서 → 붕괴)',
@@ -129,7 +129,7 @@ const P = {
  * Bodies 3..n-1 are massless planets pulled by the three suns.
  * kind: 0 sun, 1 planet bound to a home sun, 2 outer-belt planet.
  */
-class OrbitSim {
+class ThreeBodySim {
   constructor() {
     this.n = 0;
     this.M = new Float64Array(3);
@@ -386,14 +386,14 @@ function el(doc, tag, cls, parent, text) {
  * exercised in a plain browser page.
  * opts: { settings, onChange(), onOpen(path, evt), requestGraph() }
  */
-class OrbitScene {
+class ThreeBodyScene {
   constructor(host, opts) {
     this.host = host;
     this.o = opts;
     this.s = opts.settings;
     this.doc = host.ownerDocument;
     this.win = this.doc.defaultView || window;
-    this.sim = new OrbitSim();
+    this.sim = new ThreeBodySim();
     this.nodes = [];
     this.edges = new Int32Array(0);
     this.adj = [];
@@ -424,14 +424,14 @@ class OrbitScene {
     this.fadeAcc = 0;
     this.drag = null;
 
-    this.root = el(this.doc, 'div', 'gyogy6-orbit-root', host);
-    this.bg = el(this.doc, 'canvas', 'gyogy6-orbit-layer', this.root);
-    this.trail = el(this.doc, 'canvas', 'gyogy6-orbit-layer', this.root);
-    this.top = el(this.doc, 'canvas', 'gyogy6-orbit-layer', this.root);
+    this.root = el(this.doc, 'div', 'gyogy6-3body-root', host);
+    this.bg = el(this.doc, 'canvas', 'gyogy6-3body-layer', this.root);
+    this.trail = el(this.doc, 'canvas', 'gyogy6-3body-layer', this.root);
+    this.top = el(this.doc, 'canvas', 'gyogy6-3body-layer', this.root);
     this.bctx = this.bg.getContext('2d');
     this.tctx = this.trail.getContext('2d');
     this.ctx = this.top.getContext('2d');
-    this.status = el(this.doc, 'div', 'gyogy6-orbit-status', this.root);
+    this.status = el(this.doc, 'div', 'gyogy6-3body-status', this.root);
     this.glow = SUN_COLORS.map((c) => this.makeGlow(c));
     this.font = this.win.getComputedStyle(host).fontFamily || 'sans-serif';
 
@@ -584,20 +584,20 @@ class OrbitScene {
     const d = this.doc;
     const s = this.s;
     const changed = () => this.o.onChange && this.o.onChange();
-    const panel = el(d, 'div', 'gyogy6-orbit-panel', this.root);
+    const panel = el(d, 'div', 'gyogy6-3body-panel', this.root);
     panel.classList.toggle('is-collapsed', !s.panelOpen);
-    const head = el(d, 'div', 'gyogy6-orbit-head', panel);
-    el(d, 'span', 'gyogy6-orbit-title', head, t('title'));
-    const chev = el(d, 'span', 'gyogy6-orbit-chevron', head, s.panelOpen ? '▾' : '☰');
+    const head = el(d, 'div', 'gyogy6-3body-head', panel);
+    el(d, 'span', 'gyogy6-3body-title', head, t('title'));
+    const chev = el(d, 'span', 'gyogy6-3body-chevron', head, s.panelOpen ? '▾' : '☰');
     head.addEventListener('click', () => {
       s.panelOpen = !s.panelOpen;
       panel.classList.toggle('is-collapsed', !s.panelOpen);
       chev.textContent = s.panelOpen ? '▾' : '☰';
       changed();
     });
-    const body = el(d, 'div', 'gyogy6-orbit-body', panel);
+    const body = el(d, 'div', 'gyogy6-3body-body', panel);
 
-    let row = el(d, 'div', 'gyogy6-orbit-row', body);
+    let row = el(d, 'div', 'gyogy6-3body-row', body);
     el(d, 'label', '', row, t('mode'));
     const mode = el(d, 'select', 'dropdown', row);
     for (const m of ['figure8', 'triangle', 'chaos']) {
@@ -612,7 +612,7 @@ class OrbitScene {
     });
 
     const slider = (label, key, min, max, step) => {
-      const r = el(d, 'div', 'gyogy6-orbit-row', body);
+      const r = el(d, 'div', 'gyogy6-3body-row', body);
       el(d, 'label', '', r, label);
       const inp = el(d, 'input', '', r);
       inp.type = 'range';
@@ -629,7 +629,7 @@ class OrbitScene {
     slider(t('trail'), 'trail', 0, 1, 0.02);
 
     const check = (label, key) => {
-      const l = el(d, 'label', 'gyogy6-orbit-check', body);
+      const l = el(d, 'label', 'gyogy6-3body-check', body);
       const inp = el(d, 'input', '', l);
       inp.type = 'checkbox';
       inp.checked = !!s[key];
@@ -642,7 +642,7 @@ class OrbitScene {
     check(t('links'), 'showLinks');
     check(t('labels'), 'showLabels');
 
-    row = el(d, 'div', 'gyogy6-orbit-buttons', body);
+    row = el(d, 'div', 'gyogy6-3body-buttons', body);
     const pause = el(d, 'button', '', row, t('pause'));
     pause.addEventListener('click', () => {
       this.paused = !this.paused;
@@ -654,7 +654,7 @@ class OrbitScene {
       else this.restart();
       this.resetView();
     });
-    el(d, 'div', 'gyogy6-orbit-hint', body, t('hint'));
+    el(d, 'div', 'gyogy6-3body-hint', body, t('hint'));
     // Keep canvas gestures from firing through the panel.
     for (const type of ['pointerdown', 'wheel', 'dblclick']) {
       panel.addEventListener(type, (ev) => ev.stopPropagation());
@@ -1029,7 +1029,7 @@ function buildGraphData(app, settings) {
   return { nodes: files.map((f) => ({ path: f.path, name: f.basename })), edges };
 }
 
-class OrbitView extends obsidian.ItemView {
+class ThreeBodyView extends obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -1052,8 +1052,8 @@ class OrbitView extends obsidian.ItemView {
   async onOpen() {
     const plugin = this.plugin;
     this.contentEl.empty();
-    this.contentEl.addClass('gyogy6-orbit-view');
-    this.scene = new OrbitScene(this.contentEl, {
+    this.contentEl.addClass('gyogy6-3body-view');
+    this.scene = new ThreeBodyScene(this.contentEl, {
       settings: plugin.settings,
       onChange: () => plugin.saveSoon(),
       requestGraph: () => buildGraphData(this.app, plugin.settings),
@@ -1085,7 +1085,7 @@ class OrbitView extends obsidian.ItemView {
   }
 }
 
-class OrbitSettingTab extends obsidian.PluginSettingTab {
+class ThreeBodySettingTab extends obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -1120,24 +1120,24 @@ class OrbitSettingTab extends obsidian.PluginSettingTab {
   }
 }
 
-class OrbitGraphPlugin extends obsidian.Plugin {
+class ThreeBodyPlugin extends obsidian.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS, await this.loadData());
     this.saveSoon = obsidian.debounce(() => this.saveData(this.settings), 600, true);
     this.reloadViews = obsidian.debounce(
       () => {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
-          if (leaf.view instanceof OrbitView) leaf.view.reload(true);
+          if (leaf.view instanceof ThreeBodyView) leaf.view.reload(true);
         }
       },
       800,
       true
     );
     obsidian.addIcon(ICON_ID, ICON_SVG);
-    this.registerView(VIEW_TYPE, (leaf) => new OrbitView(leaf, this));
+    this.registerView(VIEW_TYPE, (leaf) => new ThreeBodyView(leaf, this));
     this.addRibbonIcon(ICON_ID, t('open'), () => this.activateView());
     this.addCommand({ id: 'open', name: t('open'), callback: () => this.activateView() });
-    this.addSettingTab(new OrbitSettingTab(this.app, this));
+    this.addSettingTab(new ThreeBodySettingTab(this.app, this));
   }
 
   async activateView() {
@@ -1151,5 +1151,5 @@ class OrbitGraphPlugin extends obsidian.Plugin {
   }
 }
 
-module.exports = OrbitGraphPlugin;
-module.exports.internals = { OrbitSim, OrbitScene, P };
+module.exports = ThreeBodyPlugin;
+module.exports.internals = { ThreeBodySim, ThreeBodyScene, P };

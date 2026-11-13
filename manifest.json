@@ -1,7 +1,7 @@
 {
-  "id": "gyogy6-orbit-graph",
-  "name": "gyogy6 Orbit Graph",
-  "version": "0.1.0",
+  "id": "gyogy6-three-body-problem",
+  "name": "gyogy6 Three-Body Problem",
+  "version": "0.1.1",
   "minAppVersion": "1.4.0",
   "description": "A graph view driven by a three-body gravity simulation: your three most linked notes become suns, every other note a planet.",
   "author": "gyogy6",

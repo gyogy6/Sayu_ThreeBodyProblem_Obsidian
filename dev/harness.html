@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Orbit Graph preview</title>
+<title>Three-Body Problem preview</title>
 <link rel="stylesheet" href="/styles.css">
 <style>
   html, body { margin: 0; height: 100%; background: #000; font-family: system-ui, sans-serif; }
@@ -36,7 +36,7 @@
   const settings = { mode: q.get('mode') || 'figure8', speed: 1, trail: 0.6, showLinks: false, showLabels: true, panelOpen: true, maxNodes: 3000 };
   const graph = () => fakeGraph(+(q.get('n') || 700), +(q.get('o') || 200));
   window.opened = [];
-  window.scene = new module.exports.internals.OrbitScene(document.getElementById('host'), {
+  window.scene = new module.exports.internals.ThreeBodyScene(document.getElementById('host'), {
     settings,
     onChange() {},
     requestGraph: graph,
