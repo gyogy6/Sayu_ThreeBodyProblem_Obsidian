@@ -54,7 +54,7 @@
     return { nodes, edges };
   }
   const q = new URLSearchParams(location.search);
-  const settings = { source: q.get('source') || 'links', mode: q.get('mode') || 'figure8', speed: 1, trail: 0.6, showLinks: false, showLabels: true, panelOpen: true, maxNodes: 3000 };
+  const settings = { source: q.get('source') || 'links', mode: q.get('mode') || 'figure8', speed: 1, trail: 0.6, showLinks: false, showLabels: true, showClock: true, panelOpen: true, maxNodes: 3000 };
   const graph = () => fakeGraph(+(q.get('n') || 700), +(q.get('o') || 200));
   window.opened = [];
   window.scene = new module.exports.internals.ThreeBodyScene(document.getElementById('host'), {

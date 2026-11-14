@@ -21,6 +21,7 @@ const DEFAULTS = {
   trail: 0.6,
   showLinks: false,
   showLabels: true,
+  showClock: true,
   panelOpen: true,
   maxNodes: 3000,
   exclude: '',
@@ -44,10 +45,11 @@ const I18N = {
     trail: 'Trails',
     links: 'Show all links',
     labels: 'Show labels',
+    clock: 'Show clock',
     pause: 'Pause',
     play: 'Play',
     reset: 'Reset',
-    hint: 'Click: open note / Shift+click: follow / Double-click: reset view',
+    hint: 'Drag: rotate / Right-drag: move / Wheel: zoom / Click: open note / Shift+click: follow / Double-click: reset view',
     notes: 'notes',
     linksCount: 'links',
     maxNodes: 'Maximum notes',
@@ -70,10 +72,11 @@ const I18N = {
     trail: '軌跡',
     links: 'すべてのリンクを表示',
     labels: 'ラベルを表示',
+    clock: '時計を表示',
     pause: '一時停止',
     play: '再生',
     reset: 'リセット',
-    hint: 'クリック: ノートを開く ／ Shift+クリック: 追従 ／ ダブルクリック: 視点リセット',
+    hint: 'ドラッグ: 回転 ／ 右ドラッグ: 移動 ／ ホイール: ズーム ／ クリック: ノートを開く ／ Shift+クリック: 追従 ／ ダブルクリック: 視点リセット',
     notes: 'ノート',
     linksCount: 'リンク',
     maxNodes: '最大ノート数',
@@ -96,10 +99,11 @@ const I18N = {
     trail: '궤적',
     links: '모든 링크 표시',
     labels: '라벨 표시',
+    clock: '시계 표시',
     pause: '일시정지',
     play: '재생',
     reset: '리셋',
-    hint: '클릭: 노트 열기 / Shift+클릭: 따라가기 / 더블클릭: 시점 초기화',
+    hint: '드래그: 회전 / 우클릭 드래그: 이동 / 휠: 줌 / 클릭: 노트 열기 / Shift+클릭: 따라가기 / 더블클릭: 시점 초기화',
     notes: '노트',
     linksCount: '링크',
     maxNodes: '최대 노트 수',
@@ -148,7 +152,8 @@ class ThreeBodySim {
     this.M = new Float64Array(3);
     this.epsS2 = 0;
     this.kTrap = 0;
-    this.X = this.Y = this.VX = this.VY = this.AX = this.AY = new Float64Array(0);
+    const e = new Float64Array(0);
+    this.X = this.Y = this.Z = this.VX = this.VY = this.VZ = this.AX = this.AY = this.AZ = e;
     this.kind = new Uint8Array(0);
     this.home = new Int8Array(0);
     this.depth = new Uint16Array(0);
@@ -160,18 +165,13 @@ class ThreeBodySim {
    * prev: optional function(i) -> index in the previous state, or -1
    */
   build(topo, mode, weights, prev) {
-    const old = { X: this.X, Y: this.Y, VX: this.VX, VY: this.VY };
+    const old = { X: this.X, Y: this.Y, Z: this.Z, VX: this.VX, VY: this.VY, VZ: this.VZ };
     const n = topo.n;
     this.n = n;
     this.kind = topo.kind;
     this.home = topo.home;
     this.depth = topo.depth;
-    this.X = new Float64Array(n);
-    this.Y = new Float64Array(n);
-    this.VX = new Float64Array(n);
-    this.VY = new Float64Array(n);
-    this.AX = new Float64Array(n);
-    this.AY = new Float64Array(n);
+    for (const k of ['X', 'Y', 'Z', 'VX', 'VY', 'VZ', 'AX', 'AY', 'AZ']) this[k] = new Float64Array(n);
 
     if (prev) {
       for (let i = 0; i < 3; i++) this.copyFrom(old, i, i);
@@ -189,14 +189,17 @@ class ThreeBodySim {
   copyFrom(old, i, j) {
     this.X[i] = old.X[j];
     this.Y[i] = old.Y[j];
+    this.Z[i] = old.Z[j];
     this.VX[i] = old.VX[j];
     this.VY[i] = old.VY[j];
+    this.VZ[i] = old.VZ[j];
   }
 
   initSuns(mode, w) {
-    const { X, Y, VX, VY, M } = this;
+    const { X, Y, Z, VX, VY, VZ, M } = this;
     if (mode === 'figure8') {
       // Chenciner–Montgomery figure-eight choreography (equal masses, G = 1).
+      // The solution is planar, so the suns stay in the z = 0 plane.
       this.epsS2 = 0;
       this.kTrap = 0;
       const px = 0.97000436;
@@ -226,6 +229,8 @@ class ThreeBodySim {
         Y[i] = Math.sin(th);
         VX[i] = -k * Math.sin(th);
         VY[i] = k * Math.cos(th);
+        // A hair of vertical motion so the collapse spills out of the plane.
+        VZ[i] = (Math.random() - 0.5) * 2e-3;
       }
     } else {
       this.kTrap = 0.3;
@@ -237,70 +242,88 @@ class ThreeBodySim {
         M[i] = 0.75 + 0.5 * (w ? w[i] : 0.5);
         X[i] = r * Math.cos(th);
         Y[i] = r * Math.sin(th);
+        Z[i] = (Math.random() - 0.5) * 0.8;
         VX[i] = sp * Math.cos(ph);
         VY[i] = sp * Math.sin(ph);
+        VZ[i] = (Math.random() - 0.5) * 0.6;
       }
     }
     // Put the centre of mass at rest at the origin.
-    let mt = 0, cx = 0, cy = 0, cvx = 0, cvy = 0;
+    let mt = 0, cx = 0, cy = 0, cz = 0, cvx = 0, cvy = 0, cvz = 0;
     for (let i = 0; i < 3; i++) {
       mt += M[i];
-      cx += M[i] * X[i]; cy += M[i] * Y[i];
-      cvx += M[i] * VX[i]; cvy += M[i] * VY[i];
+      cx += M[i] * X[i]; cy += M[i] * Y[i]; cz += M[i] * Z[i];
+      cvx += M[i] * VX[i]; cvy += M[i] * VY[i]; cvz += M[i] * VZ[i];
     }
     for (let i = 0; i < 3; i++) {
-      X[i] -= cx / mt; Y[i] -= cy / mt;
-      VX[i] -= cvx / mt; VY[i] -= cvy / mt;
+      X[i] -= cx / mt; Y[i] -= cy / mt; Z[i] -= cz / mt;
+      VX[i] -= cvx / mt; VY[i] -= cvy / mt; VZ[i] -= cvz / mt;
     }
   }
 
   placePlanet(i) {
-    const { X, Y, VX, VY, M } = this;
-    const th = Math.random() * TAU;
-    const c = Math.cos(th);
-    const s = Math.sin(th);
+    const { X, Y, Z, VX, VY, VZ, M } = this;
+    let r, v, inc, dir = 1;
+    let cx = 0, cy = 0, cz = 0, cvx = 0, cvy = 0, cvz = 0;
     if (this.kind[i] === 1) {
       // Circular orbit around the home sun; directly linked notes sit closer.
+      // Each orbit gets its own tilt, so a sun carries a thick disc of planets.
       const h = this.home[i];
       const u = this.depth[i] <= 1 ? Math.random() * 0.5 : 0.3 + Math.random() * 0.7;
-      const r = 0.1 + 0.25 * Math.sqrt(u);
-      const v = Math.sqrt((M[h] * r * r) / Math.pow(r * r + P.epsP2, 1.5));
-      const dir = h === 1 ? -1 : 1;
-      X[i] = X[h] + r * c;
-      Y[i] = Y[h] + r * s;
-      VX[i] = VX[h] - dir * v * s;
-      VY[i] = VY[h] + dir * v * c;
+      r = 0.1 + 0.25 * Math.sqrt(u);
+      v = Math.sqrt((M[h] * r * r) / Math.pow(r * r + P.epsP2, 1.5));
+      inc = Math.random() * 1.0;
+      dir = h === 1 ? -1 : 1;
+      cx = X[h]; cy = Y[h]; cz = Z[h];
+      cvx = VX[h]; cvy = VY[h]; cvz = VZ[h];
     } else {
-      // Unlinked notes: a slow belt around the whole system.
-      const r = 1.75 + 0.6 * Math.random();
-      const v = Math.sqrt((M[0] + M[1] + M[2]) / r);
-      X[i] = r * c;
-      Y[i] = r * s;
-      VX[i] = -v * s;
-      VY[i] = v * c;
+      // Unlinked notes: a slow, slightly puffed-up belt around the whole system.
+      r = 1.75 + 0.6 * Math.random();
+      v = Math.sqrt((M[0] + M[1] + M[2]) / r);
+      inc = Math.random() * 0.3;
     }
+    // Orbit plane: inclination inc, node direction om; al is the phase on the orbit.
+    const om = Math.random() * TAU;
+    const al = Math.random() * TAU;
+    const si = Math.sin(inc), ci = Math.cos(inc);
+    const so = Math.sin(om), co = Math.cos(om);
+    const ca = Math.cos(al), sa = Math.sin(al);
+    const e1x = -so, e1y = co;
+    const e2x = -ci * co, e2y = -ci * so, e2z = si;
+    X[i] = cx + r * (e1x * ca + e2x * sa);
+    Y[i] = cy + r * (e1y * ca + e2y * sa);
+    Z[i] = cz + r * (e2z * sa);
+    VX[i] = cvx + dir * v * (-e1x * sa + e2x * ca);
+    VY[i] = cvy + dir * v * (-e1y * sa + e2y * ca);
+    VZ[i] = cvz + dir * v * (e2z * ca);
   }
 
   computeAcc() {
-    const { X, Y, VX, VY, AX, AY, M, n, kind } = this;
+    const { X, Y, Z, VX, VY, VZ, AX, AY, AZ, M, n, kind } = this;
     const eS = this.epsS2;
     const k = this.kTrap;
     for (let i = 0; i < 3; i++) {
       let ax = -k * X[i];
       let ay = -k * Y[i];
+      let az = -k * Z[i];
       for (let j = 0; j < 3; j++) {
         if (j === i) continue;
         const dx = X[j] - X[i];
         const dy = Y[j] - Y[i];
-        const r2 = dx * dx + dy * dy + eS;
+        const dz = Z[j] - Z[i];
+        const r2 = dx * dx + dy * dy + dz * dz + eS;
         const inv = M[j] / (r2 * Math.sqrt(r2));
         ax += dx * inv;
         ay += dy * inv;
+        az += dz * inv;
       }
       AX[i] = ax;
       AY[i] = ay;
+      AZ[i] = az;
     }
-    const x0 = X[0], y0 = Y[0], x1 = X[1], y1 = Y[1], x2 = X[2], y2 = Y[2];
+    const x0 = X[0], y0 = Y[0], z0 = Z[0];
+    const x1 = X[1], y1 = Y[1], z1 = Z[1];
+    const x2 = X[2], y2 = Y[2], z2 = Z[2];
     const m0 = M[0], m1 = M[1], m2 = M[2];
     const eP = P.epsP2;
     const wallR = P.wallR;
@@ -308,31 +331,36 @@ class ThreeBodySim {
     for (let i = 3; i < n; i++) {
       const x = X[i];
       const y = Y[i];
-      const dx0 = x0 - x, dy0 = y0 - y;
-      const dx1 = x1 - x, dy1 = y1 - y;
-      const dx2 = x2 - x, dy2 = y2 - y;
-      const d0 = dx0 * dx0 + dy0 * dy0;
-      const d1 = dx1 * dx1 + dy1 * dy1;
-      const d2 = dx2 * dx2 + dy2 * dy2;
+      const z = Z[i];
+      const dx0 = x0 - x, dy0 = y0 - y, dz0 = z0 - z;
+      const dx1 = x1 - x, dy1 = y1 - y, dz1 = z1 - z;
+      const dx2 = x2 - x, dy2 = y2 - y, dz2 = z2 - z;
+      const d0 = dx0 * dx0 + dy0 * dy0 + dz0 * dz0;
+      const d1 = dx1 * dx1 + dy1 * dy1 + dz1 * dz1;
+      const d2 = dx2 * dx2 + dy2 * dy2 + dz2 * dz2;
       let r2 = d0 + eP;
       let inv = m0 / (r2 * Math.sqrt(r2));
       let ax = dx0 * inv;
       let ay = dy0 * inv;
+      let az = dz0 * inv;
       r2 = d1 + eP;
       inv = m1 / (r2 * Math.sqrt(r2));
       ax += dx1 * inv;
       ay += dy1 * inv;
+      az += dz1 * inv;
       r2 = d2 + eP;
       inv = m2 / (r2 * Math.sqrt(r2));
       ax += dx2 * inv;
       ay += dy2 * inv;
+      az += dz2 * inv;
 
-      const rr = x * x + y * y;
+      const rr = x * x + y * y + z * z;
       if (rr > wallR2) {
         const r = Math.sqrt(rr);
         const f = (P.wallK * (r - wallR)) / r;
         ax -= x * f;
         ay -= y * f;
+        az -= z * f;
       }
       if (kind[i] === 1) {
         // Stray planets slowly match the nearest sun and get recaptured.
@@ -343,16 +371,18 @@ class ThreeBodySim {
         if (dm > P.rc2) {
           ax -= P.drag * (VX[i] - VX[j]);
           ay -= P.drag * (VY[i] - VY[j]);
+          az -= P.drag * (VZ[i] - VZ[j]);
         }
       }
       AX[i] = ax;
       AY[i] = ay;
+      AZ[i] = az;
     }
   }
 
   /** Leapfrog (kick-drift-kick). */
   advance(dt) {
-    const { X, Y, VX, VY, AX, AY, n } = this;
+    const { X, Y, Z, VX, VY, VZ, AX, AY, AZ, n } = this;
     if (!n || dt <= 0) return;
     const nsub = Math.min(P.maxSub, Math.max(1, Math.ceil(dt / P.hMax)));
     const h = dt / nsub;
@@ -361,13 +391,16 @@ class ThreeBodySim {
       for (let i = 0; i < n; i++) {
         VX[i] += AX[i] * hh;
         VY[i] += AY[i] * hh;
+        VZ[i] += AZ[i] * hh;
         X[i] += VX[i] * h;
         Y[i] += VY[i] * h;
+        Z[i] += VZ[i] * h;
       }
       this.computeAcc();
       for (let i = 0; i < n; i++) {
         VX[i] += AX[i] * hh;
         VY[i] += AY[i] * hh;
+        VZ[i] += AZ[i] * hh;
       }
     }
   }
@@ -385,6 +418,14 @@ const TRAIL_COLORS = [
 ];
 const VIEW_HALF = 2.5; // world units visible from centre along the short axis
 const TOP_LABELS = 6;
+const CAM_DIST = 9; // camera distance in world units (sets the strength of perspective)
+const YAW0 = 0.5;
+const PITCH0 = 0.95; // 0 looks straight down on the orbital plane
+const STAR_COUNT = 520;
+const HUD = 'rgba(120,235,255,';
+const MONO = "ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace";
+// The clock runs at real time at speed 1 and 60 times faster for each extra step.
+const clockRate = (speed) => Math.pow(60, speed - 1);
 
 function el(doc, tag, cls, parent, text) {
   const e = doc.createElement(tag);
@@ -418,6 +459,7 @@ class ThreeBodyScene {
     this.SY = new Float32Array(0);
     this.PX = new Float32Array(0);
     this.PY = new Float32Array(0);
+    this.PS = new Float32Array(0);
     this.sunPaths = null;
     this.pathIndex = new Map();
 
@@ -429,6 +471,23 @@ class ThreeBodyScene {
     this.userZoom = false;
     this.panX = 0;
     this.panY = 0;
+    this.panZ = 0;
+    this.yaw = YAW0;
+    this.pitch = PITCH0;
+    this.cam = { cy: 1, sy: 0, cp: 1, sp: 0, tx: 0, ty: 0, tz: 0 };
+    this.camDirty = true;
+    this.rs = 1;
+    this.clockOffset = 0; // ms the shown clock is ahead of the real one
+    this.lastWall = 0;
+    this.spin = 0;
+    this.stars = new Float32Array(STAR_COUNT * 4);
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const u = Math.random() * 2 - 1;
+      const a = Math.random() * TAU;
+      const q = Math.sqrt(1 - u * u);
+      const b = Math.random();
+      this.stars.set([q * Math.cos(a), q * Math.sin(a), u, b * b], i * 4);
+    }
     this.follow = -1;
     this.hover = -1;
     this.mouseX = -1;
@@ -579,6 +638,7 @@ class ThreeBodyScene {
     this.SY = new Float32Array(n);
     this.PX = new Float32Array(n);
     this.PY = new Float32Array(n);
+    this.PS = new Float32Array(n);
     if (this.follow >= 3 || this.follow >= n) this.follow = -1;
     this.hover = -1;
     this.trailReset = true;
@@ -654,8 +714,9 @@ class ThreeBodyScene {
         s[key] = parseFloat(inp.value);
         changed();
       });
+      return inp;
     };
-    slider(t('speed'), 'speed', 0.1, 4, 0.05);
+    const speedInput = slider(t('speed'), 'speed', 0.1, 4, 0.05);
     slider(t('trail'), 'trail', 0, 1, 0.02);
 
     const check = (label, key) => {
@@ -671,6 +732,7 @@ class ThreeBodyScene {
     };
     check(t('links'), 'showLinks');
     check(t('labels'), 'showLabels');
+    check(t('clock'), 'showClock');
 
     row = el(d, 'div', 'sayu-3body-buttons', body);
     const pause = el(d, 'button', '', row, t('pause'));
@@ -683,10 +745,15 @@ class ThreeBodyScene {
       if (this.o.requestGraph) this.setGraph(this.o.requestGraph(), true);
       else this.restart();
       this.resetView();
+      // Back to the present: normal speed and the real time of day.
+      s.speed = 1;
+      speedInput.value = '1';
+      this.clockOffset = 0;
+      changed();
     });
     el(d, 'div', 'sayu-3body-hint', body, t('hint'));
     // Keep canvas gestures from firing through the panel.
-    for (const type of ['pointerdown', 'wheel', 'dblclick']) {
+    for (const type of ['pointerdown', 'wheel', 'dblclick', 'contextmenu']) {
       panel.addEventListener(type, (ev) => ev.stopPropagation());
     }
   }
@@ -697,10 +764,11 @@ class ThreeBodyScene {
       const r = c.getBoundingClientRect();
       return [ev.clientX - r.left, ev.clientY - r.top];
     };
+    c.addEventListener('contextmenu', (ev) => ev.preventDefault());
     c.addEventListener('pointerdown', (ev) => {
-      if (ev.button !== 0) return;
+      if (ev.button > 2) return;
       const [x, y] = pos(ev);
-      this.drag = { x, y, moved: false };
+      this.drag = { x, y, moved: false, pan: ev.button !== 0 };
       c.setPointerCapture(ev.pointerId);
     });
     c.addEventListener('pointermove', (ev) => {
@@ -711,23 +779,35 @@ class ThreeBodyScene {
       if (!d) return;
       if (!d.moved && Math.hypot(x - d.x, y - d.y) < 4) return;
       d.moved = true;
-      this.panX -= (x - d.x) / this.zoom;
-      this.panY -= (y - d.y) / this.zoom;
+      const dx = x - d.x;
+      const dy = y - d.y;
+      if (d.pan) {
+        // Slide the look-at point within the screen plane.
+        const { cy, sy, cp, sp } = this.cam;
+        const vx = dx / this.zoom;
+        const vy = (dy / this.zoom) * cp;
+        this.panX -= vx * cy + vy * sy;
+        this.panY -= -vx * sy + vy * cy;
+        this.panZ -= -(dy / this.zoom) * sp;
+      } else {
+        this.yaw += dx * 0.006;
+        this.pitch = Math.min(1.5, Math.max(0, this.pitch - dy * 0.006));
+      }
       d.x = x;
       d.y = y;
+      this.camDirty = true;
       this.trailReset = true;
     });
     const end = (ev) => {
       const d = this.drag;
       this.drag = null;
-      if (!d || d.moved || ev.type !== 'pointerup') return;
+      if (!d || d.moved || d.pan || ev.type !== 'pointerup') return;
       const [x, y] = pos(ev);
       const i = this.pick(x, y);
       if (i < 0) return;
       if (ev.shiftKey) {
         this.follow = this.follow === i ? -1 : i;
-        this.panX = 0;
-        this.panY = 0;
+        this.panX = this.panY = this.panZ = 0;
         this.trailReset = true;
       } else if (this.nodes[i].path != null && !this.nodes[i].folder && this.o.onOpen) {
         this.o.onOpen(this.nodes[i].path, ev);
@@ -742,12 +822,8 @@ class ThreeBodyScene {
       'wheel',
       (ev) => {
         ev.preventDefault();
-        const [x, y] = pos(ev);
-        const z0 = this.zoom;
-        const z1 = Math.min(this.zoom0 * 40, Math.max(this.zoom0 * 0.3, z0 * Math.exp(-ev.deltaY * 0.0015)));
-        this.panX += (x - this.w / 2) * (1 / z0 - 1 / z1);
-        this.panY += (y - this.h / 2) * (1 / z0 - 1 / z1);
-        this.zoom = z1;
+        const z = this.zoom * Math.exp(-ev.deltaY * 0.0015);
+        this.zoom = Math.min(this.zoom0 * 40, Math.max(this.zoom0 * 0.3, z));
         this.userZoom = true;
         this.trailReset = true;
       },
@@ -761,23 +837,27 @@ class ThreeBodyScene {
 
   resetView() {
     this.follow = -1;
-    this.panX = 0;
-    this.panY = 0;
+    this.panX = this.panY = this.panZ = 0;
+    this.yaw = YAW0;
+    this.pitch = PITCH0;
     this.zoom = this.zoom0;
     this.userZoom = false;
+    this.camDirty = true;
     this.trailReset = true;
   }
 
   pick(mx, my) {
-    const { SX, SY, RAD } = this;
+    const { SX, SY, PS, RAD } = this;
     const n = this.sim.n;
     let best = -1;
     let bd = Infinity;
     for (let i = 0; i < n; i++) {
+      const k = PS[i];
+      if (k <= 0) continue;
       const dx = SX[i] - mx;
       const dy = SY[i] - my;
       const d = dx * dx + dy * dy;
-      const r = i < 3 ? 16 : Math.max(8, RAD[i] * this.rs + 4);
+      const r = i < 3 ? 16 * k : Math.max(8, RAD[i] * this.rs * k + 4);
       // Suns win ties so they stay easy to grab inside their swarm.
       const score = i < 3 ? d * 0.25 : d;
       if (d < r * r && score < bd) {
@@ -818,16 +898,7 @@ class ThreeBodyScene {
     this.zoom0 = Math.min(w, h) / (2 * VIEW_HALF);
     if (!this.userZoom) this.zoom = this.zoom0;
     this.trailReset = true;
-    // Static star field.
-    const b = this.bctx;
-    b.clearRect(0, 0, w, h);
-    const stars = Math.round((w * h) / 2600);
-    for (let i = 0; i < stars; i++) {
-      const r = Math.random();
-      b.fillStyle = `rgba(210,222,255,${0.08 + r * r * 0.5})`;
-      const sz = r > 0.95 ? 1.6 : 1;
-      b.fillRect(Math.random() * w, Math.random() * h, sz, sz);
-    }
+    this.camDirty = true;
   }
 
   /* ---------------------------------------------------------------- loop */
@@ -837,33 +908,146 @@ class ThreeBodyScene {
     this.raf = this.win.requestAnimationFrame(this.frame);
     const dt = Math.min(0.034, Math.max(0, (ts - this.last) / 1000));
     this.last = ts;
+    const wall = Date.now();
+    const wallDt = this.lastWall ? wall - this.lastWall : 0;
+    this.lastWall = wall;
+    // The shown time is the real time plus an offset. At speed 1 the offset
+    // stands still, so the clock is simply the real one; pausing freezes it.
+    if (this.paused) this.clockOffset -= wallDt;
+    else this.clockOffset += dt * 1000 * (clockRate(this.s.speed) - 1);
     if (this.host.offsetParent === null || !this.w) return; // hidden tab
     const moving = !this.paused && this.sim.n > 0;
-    if (moving) this.sim.advance(dt * P.timeScale * this.s.speed);
+    if (moving) {
+      this.sim.advance(dt * P.timeScale * this.s.speed);
+      this.spin += dt * (0.5 + 1.1 * Math.log10(1 + clockRate(this.s.speed)));
+    }
     this.draw(moving);
+  }
+
+  /** World point -> screen, using the camera set up by the last draw(). */
+  project(x, y, z, out) {
+    const m = this.cam;
+    const dx = x - m.tx;
+    const dy = y - m.ty;
+    const dz = z - m.tz;
+    const x1 = dx * m.cy - dy * m.sy;
+    const y1 = dx * m.sy + dy * m.cy;
+    const depth = y1 * m.sp + dz * m.cp;
+    const k = CAM_DIST / (CAM_DIST - depth);
+    if (!(k > 0) || k > 8) return false;
+    out[0] = this.w / 2 + x1 * this.zoom * k;
+    out[1] = this.h / 2 + (y1 * m.cp - dz * m.sp) * this.zoom * k;
+    return true;
+  }
+
+  drawStars() {
+    const b = this.bctx;
+    const { w, h, stars } = this;
+    const { cy, sy, cp, sp } = this.cam;
+    const R = Math.max(w, h) * 0.8;
+    b.clearRect(0, 0, w, h);
+    for (let i = 0; i < stars.length; i += 4) {
+      const x1 = stars[i] * cy - stars[i + 1] * sy;
+      const y1 = stars[i] * sy + stars[i + 1] * cy;
+      const depth = y1 * sp + stars[i + 2] * cp;
+      if (depth > 0.15) continue; // only the far half of the sky
+      const x = w / 2 + x1 * R;
+      const y = h / 2 + (y1 * cp - stars[i + 2] * sp) * R;
+      if (x < 0 || y < 0 || x > w || y > h) continue;
+      const br = stars[i + 3];
+      b.fillStyle = `rgba(210,222,255,${0.1 + br * 0.55})`;
+      const sz = br > 0.85 ? 1.7 : 1;
+      b.fillRect(x, y, sz, sz);
+    }
+  }
+
+  /** Faint rings on the orbital plane: they make the rotation readable. */
+  drawGrid(c) {
+    const q = [0, 0];
+    c.lineWidth = 1;
+    const radii = [1, 2, P.wallR];
+    for (let k = 0; k < radii.length; k++) {
+      const r = radii[k];
+      c.strokeStyle = HUD + (k === 2 ? '0.13)' : '0.08)');
+      c.setLineDash(k === 2 ? [2, 6] : []);
+      c.beginPath();
+      let pen = false;
+      for (let a = 0; a <= 96; a++) {
+        const th = (a / 96) * TAU;
+        if (this.project(r * Math.cos(th), r * Math.sin(th), 0, q)) {
+          if (pen) c.lineTo(q[0], q[1]);
+          else c.moveTo(q[0], q[1]);
+          pen = true;
+        } else {
+          pen = false;
+        }
+      }
+      c.stroke();
+    }
+    c.setLineDash([]);
+    c.strokeStyle = HUD + '0.06)';
+    c.beginPath();
+    for (let a = 0; a < 12; a++) {
+      const th = (a / 12) * TAU;
+      const r0 = 0.25;
+      const r1 = P.wallR;
+      const p0 = this.project(r0 * Math.cos(th), r0 * Math.sin(th), 0, q);
+      const x0 = q[0];
+      const y0 = q[1];
+      if (p0 && this.project(r1 * Math.cos(th), r1 * Math.sin(th), 0, q)) {
+        c.moveTo(x0, y0);
+        c.lineTo(q[0], q[1]);
+      }
+    }
+    c.stroke();
   }
 
   draw(moving) {
     const sim = this.sim;
     const n = sim.n;
-    const { w, h, SX, SY, PX, PY, RAD } = this;
+    const { w, h, SX, SY, PS, PX, PY, RAD } = this;
     const X = sim.X;
     const Y = sim.Y;
+    const Z = sim.Z;
     const z = this.zoom;
-    let cx = this.panX;
-    let cy = this.panY;
+    const m = this.cam;
+    m.tx = this.panX;
+    m.ty = this.panY;
+    m.tz = this.panZ;
     if (this.follow >= 0 && this.follow < n) {
-      cx += X[this.follow];
-      cy += Y[this.follow];
+      m.tx += X[this.follow];
+      m.ty += Y[this.follow];
+      m.tz += Z[this.follow];
     }
-    const ox = w / 2 - cx * z;
-    const oy = h / 2 - cy * z;
+    m.cy = Math.cos(this.yaw);
+    m.sy = Math.sin(this.yaw);
+    m.cp = Math.cos(this.pitch);
+    m.sp = Math.sin(this.pitch);
+    const hw = w / 2;
+    const hh = h / 2;
     for (let i = 0; i < n; i++) {
-      SX[i] = X[i] * z + ox;
-      SY[i] = Y[i] * z + oy;
+      const dx = X[i] - m.tx;
+      const dy = Y[i] - m.ty;
+      const dz = Z[i] - m.tz;
+      const x1 = dx * m.cy - dy * m.sy;
+      const y1 = dx * m.sy + dy * m.cy;
+      const depth = y1 * m.sp + dz * m.cp;
+      const k = CAM_DIST / (CAM_DIST - depth);
+      if (!(k > 0) || k > 8) {
+        PS[i] = 0; // behind the camera
+        SX[i] = SY[i] = -1e5;
+        continue;
+      }
+      PS[i] = k;
+      SX[i] = hw + x1 * z * k;
+      SY[i] = hh + (y1 * m.cp - dz * m.sp) * z * k;
     }
     const rs = Math.min(2.6, Math.max(0.7, Math.sqrt(z / this.zoom0)));
     this.rs = rs;
+    if (this.camDirty) {
+      this.drawStars();
+      this.camDirty = false;
+    }
 
     /* trails ---------------------------------------------------------- */
     const tc = this.tctx;
@@ -904,8 +1088,12 @@ class ThreeBodyScene {
         }
         tc.stroke();
       }
-      tc.lineWidth = 2.4 * rs;
       for (let i = 0; i < 3 && i < n; i++) {
+        if (PS[i] <= 0) continue;
+        const dx = SX[i] - PX[i];
+        const dy = SY[i] - PY[i];
+        if (dx * dx + dy * dy > 6400) continue;
+        tc.lineWidth = 2.4 * rs * PS[i];
         tc.strokeStyle = SUN_COLORS[i];
         tc.beginPath();
         tc.moveTo(PX[i], PY[i]);
@@ -919,7 +1107,11 @@ class ThreeBodyScene {
     /* foreground ------------------------------------------------------ */
     const c = this.ctx;
     c.clearRect(0, 0, w, h);
-    if (!n) return;
+    this.drawGrid(c);
+    if (!n) {
+      this.drawClock(c);
+      return;
+    }
 
     if (this.s.showLinks) {
       const e = this.edges;
@@ -929,6 +1121,7 @@ class ThreeBodyScene {
       for (let i = 0; i < e.length; i += 2) {
         const a = e[i];
         const b = e[i + 1];
+        if (PS[a] <= 0 || PS[b] <= 0) continue;
         const ax = SX[a], ay = SY[a], bx = SX[b], by = SY[b];
         if ((ax < 0 && bx < 0) || (ay < 0 && by < 0) || (ax > w && bx > w) || (ay > h && by > h)) continue;
         c.moveTo(ax, ay);
@@ -937,24 +1130,35 @@ class ThreeBodyScene {
       c.stroke();
     }
 
+    // Planets: far ones are smaller and dimmer, near ones larger and brighter.
     for (let g = 0; g < 4; g++) {
       const list = this.groups[g];
-      c.fillStyle = HEAD_COLORS[g];
-      c.beginPath();
+      const far = new Path2D();
+      const mid = new Path2D();
+      const near = new Path2D();
       for (let k = 0; k < list.length; k++) {
         const i = list[k];
+        const ps = PS[i];
+        if (ps <= 0) continue;
         const x = SX[i];
         const y = SY[i];
         if (x < -8 || y < -8 || x > w + 8 || y > h + 8) continue;
-        const r = RAD[i] * rs;
+        const r = RAD[i] * rs * ps;
+        const p = ps < 0.93 ? far : ps < 1.1 ? mid : near;
         if (r < 1.7) {
-          c.rect(x - r, y - r, r * 2, r * 2);
+          p.rect(x - r, y - r, r * 2, r * 2);
         } else {
-          c.moveTo(x + r, y);
-          c.arc(x, y, r, 0, TAU);
+          p.moveTo(x + r, y);
+          p.arc(x, y, r, 0, TAU);
         }
       }
-      c.fill();
+      c.fillStyle = HEAD_COLORS[g];
+      c.globalAlpha = 0.45;
+      c.fill(far);
+      c.globalAlpha = 0.78;
+      c.fill(mid);
+      c.globalAlpha = 1;
+      c.fill(near);
     }
 
     // Folders are drawn with a ring so they read differently from notes.
@@ -965,10 +1169,11 @@ class ThreeBodyScene {
       c.beginPath();
       for (let k = 0; k < fl.length; k++) {
         const i = fl[k];
+        if (PS[i] <= 0) continue;
         const x = SX[i];
         const y = SY[i];
         if (x < -12 || y < -12 || x > w + 12 || y > h + 12) continue;
-        const r = i < 3 ? 9 * rs : RAD[i] * rs + 2.5;
+        const r = (i < 3 ? 9 * rs : RAD[i] * rs + 2.5) * PS[i];
         c.moveTo(x + r, y);
         c.arc(x, y, r, 0, TAU);
       }
@@ -976,8 +1181,10 @@ class ThreeBodyScene {
     }
 
     c.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 3; i++) {
-      const R = (22 + 10 * sim.M[i]) * rs;
+    const order = [0, 1, 2].sort((a, b) => PS[a] - PS[b]);
+    for (const i of order) {
+      if (PS[i] <= 0) continue;
+      const R = (22 + 10 * sim.M[i]) * rs * PS[i];
       c.drawImage(this.glow[i], SX[i] - R, SY[i] - R, R * 2, R * 2);
     }
     c.globalCompositeOperation = 'source-over';
@@ -993,6 +1200,7 @@ class ThreeBodyScene {
       c.lineWidth = 1;
       c.beginPath();
       for (let k = 0; k < nb.length; k++) {
+        if (PS[nb[k]] <= 0) continue;
         c.moveTo(SX[hov], SY[hov]);
         c.lineTo(SX[nb[k]], SY[nb[k]]);
       }
@@ -1001,15 +1209,16 @@ class ThreeBodyScene {
       c.beginPath();
       for (let k = 0; k < nb.length; k++) {
         const j = nb[k];
-        if (j < 3) continue;
-        const r = RAD[j] * rs + 0.8;
+        if (j < 3 || PS[j] <= 0) continue;
+        const r = RAD[j] * rs * PS[j] + 0.8;
         c.moveTo(SX[j] + r, SY[j]);
         c.arc(SX[j], SY[j], r, 0, TAU);
       }
       c.fill();
     }
     const ring = (i, color) => {
-      const r = (i < 3 ? 12 : RAD[i] + 4) * rs;
+      if (PS[i] <= 0) return;
+      const r = (i < 3 ? 12 : RAD[i] + 4) * rs * PS[i];
       c.strokeStyle = color;
       c.lineWidth = 1.5;
       c.beginPath();
@@ -1020,12 +1229,13 @@ class ThreeBodyScene {
     if (hov >= 0) ring(hov, 'rgba(255,255,255,0.9)');
 
     /* labels ---------------------------------------------------------- */
+    c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
     const label = (i, size, alpha) => {
       const name = this.nodes[i].name;
-      if (!name) return;
-      const x = SX[i] + (i < 3 ? 14 : RAD[i] + 6) * rs;
+      if (!name || PS[i] <= 0) return;
+      const x = SX[i] + (i < 3 ? 14 : RAD[i] + 6) * rs * PS[i];
       const y = SY[i];
       if (x < -200 || y < -10 || x > w || y > h + 10) return;
       c.font = `${size}px ${this.font}`;
@@ -1045,6 +1255,117 @@ class ThreeBodyScene {
       for (let k = 0; k < nb.length && k < 16; k++) label(nb[k], 11, 0.8);
       label(hov, 13, 1);
     }
+    this.drawClock(c);
+  }
+
+  /** Heads-up clock: real time, running ahead as the speed goes up. */
+  drawClock(c) {
+    if (!this.s.showClock) return;
+    const rate = clockRate(this.s.speed);
+    const off = this.clockOffset;
+    const d = new Date(Date.now() + off);
+    const p2 = (v) => String(v).padStart(2, '0');
+    const R = 62;
+    const cx = 30 + R;
+    const cy = 26 + R;
+    const sec = d.getSeconds() + d.getMilliseconds() / 1000;
+    const min = d.getMinutes() + sec / 60;
+    const hr = (d.getHours() % 12) + min / 60;
+
+    c.save();
+    // A slight shear makes the panel look tilted toward the viewer.
+    c.transform(1, -0.045, 0, 1, 0, cx * 0.045);
+    c.shadowColor = 'rgba(70,215,255,0.9)';
+    c.shadowBlur = 9;
+    c.lineCap = 'butt';
+
+    // dial ticks
+    c.strokeStyle = HUD + '0.38)';
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let k = 0; k < 60; k++) {
+      const a = (k / 60) * TAU;
+      const r0 = k % 5 === 0 ? R - 7 : R - 3.5;
+      c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      c.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    }
+    c.stroke();
+
+    // seconds / minutes / hours as three arcs growing clockwise from the top
+    const arc = (r, frac, width, alpha) => {
+      c.strokeStyle = HUD + (alpha * 0.16).toFixed(3) + ')';
+      c.lineWidth = width;
+      c.beginPath();
+      c.arc(cx, cy, r, 0, TAU);
+      c.stroke();
+      c.strokeStyle = HUD + alpha + ')';
+      c.beginPath();
+      c.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.max(0.0001, frac) * TAU);
+      c.stroke();
+    };
+    // Past about a minute per second the seconds arc is just noise: show it full.
+    arc(R - 11, rate > 45 ? 1 : sec / 60, 2.6, rate > 45 ? 0.55 : 0.95);
+    arc(R - 17.5, min / 60, 2.2, 0.75);
+    arc(R - 24, hr / 12, 2.2, 0.55);
+
+    // outer segments: they spin faster as time runs faster
+    c.lineWidth = 1.6;
+    for (let k = 0; k < 3; k++) {
+      const a = this.spin + (k * TAU) / 3;
+      c.strokeStyle = HUD + (k === 0 ? '0.9)' : '0.4)');
+      c.beginPath();
+      c.arc(cx, cy, R + 6, a, a + 0.75);
+      c.stroke();
+    }
+    c.strokeStyle = HUD + '0.3)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(cx, cy, R + 10.5, -this.spin * 0.4, -this.spin * 0.4 + 2.2);
+    c.stroke();
+
+    // digital readout in the middle
+    c.shadowBlur = 7;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = HUD + '1)';
+    c.font = `600 15px ${MONO}`;
+    c.fillText(`${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`, cx, cy - 1);
+    c.font = `9.5px ${MONO}`;
+    c.fillStyle = HUD + '0.72)';
+    c.fillText(`${d.getFullYear()}.${p2(d.getMonth() + 1)}.${p2(d.getDate())}`, cx, cy + 15);
+
+    // side readout: rate and how far ahead of the real time
+    const x0 = cx + R + 24;
+    c.strokeStyle = HUD + '0.45)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(x0 - 9, cy - 34);
+    c.lineTo(x0 - 9, cy + 34);
+    c.moveTo(x0 - 9, cy - 34);
+    c.lineTo(x0 - 3, cy - 34);
+    c.moveTo(x0 - 9, cy + 34);
+    c.lineTo(x0 - 3, cy + 34);
+    c.stroke();
+    c.textAlign = 'left';
+    c.font = `8.5px ${MONO}`;
+    c.fillStyle = HUD + '0.55)';
+    c.fillText('TIME RATE', x0, cy - 27);
+    c.fillText('ELAPSED', x0, cy + 11);
+    let rt;
+    if (rate < 10) rt = rate.toFixed(rate < 1 ? 2 : 1);
+    else if (rate < 1000) rt = String(Math.round(rate));
+    else if (rate < 1e6) rt = (rate / 1000).toFixed(rate < 1e4 ? 1 : 0) + 'k';
+    else rt = (rate / 1e6).toFixed(1) + 'M';
+    c.fillStyle = HUD + '1)';
+    c.font = `600 21px ${MONO}`;
+    c.fillText('×' + rt, x0, cy - 9);
+    const a = Math.abs(off) / 1000;
+    const days = Math.floor(a / 86400);
+    const txt = `${off < -500 ? 'T−' : 'T+'} ${days}d ${p2(Math.floor(a / 3600) % 24)}:${p2(Math.floor(a / 60) % 60)}:${p2(Math.floor(a) % 60)}`;
+    c.font = `11px ${MONO}`;
+    c.fillStyle = HUD + '0.9)';
+    c.fillText(txt, x0, cy + 26);
+    c.restore();
   }
 }
 
